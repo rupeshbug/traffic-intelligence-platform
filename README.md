@@ -2,6 +2,8 @@ The data arrives in stream that never ends.
 The data processing is real-time.
 Dashboard we create adapts to the data changes.
 
+## Intro
+
 This project simulates a real-world streaming data pipeline where traffic data is continuously generated, processed, cleaned, and transformed into analytics-ready datasets for business intelligence and dashboarding.
 
 • Building a real-time streaming pipeline using Apache Kafka  
