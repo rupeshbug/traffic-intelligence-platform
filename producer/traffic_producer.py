@@ -1,10 +1,16 @@
-from kafka import KafkaProducer
-from faker import Faker
+import sys
 import json
 import random
 import time
 from datetime import datetime, timedelta
+
 import pytz
+from faker import Faker
+from kafka import KafkaProducer
+
+from utils.logger import logger
+from utils.exception import TrafficPipelineException
+
 
 fake = Faker()
 utc = pytz.utc
@@ -14,7 +20,10 @@ producer = KafkaProducer(
     value_serializer=lambda v: json.dumps(v).encode("utf-8")
 )
 
-# Map roads to zones so road_id and city_zone are not randomly unrelated
+logger.info("Kafka producer initialized successfully")
+
+
+# Map roads to zones so road_id and city_zone stay logically consistent
 roads = {
     "R100": "CBD",
     "R200": "AIRPORT",
@@ -24,16 +33,15 @@ roads = {
 }
 
 weather_options = ["CLEAR", "RAIN", "FOG", "STORM"]
-
 vehicle_cache = []
 
 
-# Rush hour affects congestion more in business/transport-heavy zones
+# Rush-hour logic to create time-based traffic patterns
 def is_rush_hour(hour):
     return (7 <= hour <= 10) or (17 <= hour <= 20)
 
 
-# Slightly weighted weather distribution instead of fully uniform random
+# Weighted weather choice so all weather types are not equally likely
 def choose_weather():
     return random.choices(
         population=weather_options,
@@ -42,7 +50,7 @@ def choose_weather():
     )[0]
 
 
-# Compute congestion based on time, zone, weather, and incidents
+# Congestion depends on zone, time, weather, and incidents
 def compute_congestion(zone, weather, hour, incident_flag):
     score = 2.0
 
@@ -63,13 +71,13 @@ def compute_congestion(zone, weather, hour, incident_flag):
     if incident_flag:
         score += 1.5
 
-    # Add noise so data is not too perfectly controlled
+    # Add some noise so the data is not too perfectly controlled
     score += random.uniform(-0.8, 0.8)
 
     return max(1, min(5, round(score)))
 
 
-# Speed should generally go down when congestion and bad weather go up
+# Speed generally drops as congestion and bad weather increase
 def compute_speed(zone, congestion_level, weather):
     base_speed = {
         "CBD": 45,
@@ -94,7 +102,7 @@ def compute_speed(zone, congestion_level, weather):
     return max(5, min(110, speed))
 
 
-# Traffic volume is useful for analytics and later ML
+# Traffic volume is useful for analytics and later ML tasks
 def compute_traffic_volume(zone, congestion_level, hour):
     base_volume = {
         "CBD": 120,
@@ -113,7 +121,7 @@ def compute_traffic_volume(zone, congestion_level, hour):
     return max(10, base_volume)
 
 
-# Generate clean events with more realistic relationships between features
+# Generate clean events with realistic relationships between features
 def generate_clean_event():
     event_dt = datetime.now(utc)
     hour = event_dt.hour
@@ -122,7 +130,7 @@ def generate_clean_event():
     city_zone = roads[road_id]
     weather = choose_weather()
 
-    # Small chance of an incident that worsens traffic
+    # Small chance of a traffic incident
     incident_flag = 1 if random.random() < 0.06 else 0
 
     congestion_level = compute_congestion(city_zone, weather, hour, incident_flag)
@@ -145,7 +153,7 @@ def generate_clean_event():
     }
 
 
-# Inject bad/dirty events so downstream cleaning logic is meaningful
+# Generate intentionally bad records so downstream cleaning logic has work to do
 def generate_dirty_event():
     dirty_type = random.choice([
         "null_speed",
@@ -158,6 +166,8 @@ def generate_dirty_event():
         "schema_drift",
         "corrupt_json"
     ])
+
+    logger.warning(f"Generating dirty event of type: {dirty_type}")
 
     base = generate_clean_event()
 
@@ -187,7 +197,9 @@ def generate_dirty_event():
         base["speed"] = "FAST"
 
     elif dirty_type == "schema_drift":
-        base["road_condition"] = random.choice(["GOOD", "BAD", "UNDER_CONSTRUCTION"])
+        base["road_condition"] = random.choice(
+            ["GOOD", "BAD", "UNDER_CONSTRUCTION"]
+        )
 
     elif dirty_type == "corrupt_json":
         return "###CORRUPTED_EVENT###"
@@ -195,18 +207,30 @@ def generate_dirty_event():
     return base
 
 
-while True:
-    if random.random() < 0.75:
-        event = generate_clean_event()
-    else:
-        event = generate_dirty_event()
+event_count = 0
 
-    if isinstance(event, str):
-        producer.send("traffic-topic", value={"raw": event})
-        print("CORRUPT EVENT SENT")
-    else:
-        producer.send("traffic-topic", value=event)
-        print(event)
+try:
+    while True:
+        if random.random() < 0.75:
+            event = generate_clean_event()
+        else:
+            event = generate_dirty_event()
 
-    time.sleep(random.uniform(0.5, 1.5))
-    
+        if isinstance(event, str):
+            producer.send("traffic-topic", value={"raw": event})
+            logger.warning("Corrupt payload sent to Kafka topic")
+            print("CORRUPT EVENT SENT")
+        else:
+            producer.send("traffic-topic", value=event)
+            event_count += 1
+
+            if event_count % 50 == 0:
+                logger.info(f"{event_count} events sent successfully")
+
+            print(event)
+
+        time.sleep(random.uniform(0.5, 1.5))
+
+except Exception as e:
+    logger.error(str(TrafficPipelineException(e, sys)))
+    raise TrafficPipelineException(e, sys)
