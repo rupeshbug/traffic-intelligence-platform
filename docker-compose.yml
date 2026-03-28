@@ -41,6 +41,8 @@ services:
     image: apache/spark:3.5.1
     container_name: spark-master
     hostname: spark-master
+    environment:
+      PYTHONPATH: /opt/project
     command: >
       bash -c "
       /opt/spark/sbin/start-master.sh &&
@@ -50,6 +52,7 @@ services:
       - "8080:8080"   # Spark Master UI
       - "7077:7077"   # Spark Master port
     volumes:
+      - .:/opt/project
       - ./warehouse:/opt/spark/warehouse
       - ./apps:/opt/spark-apps
       - ./spark-ivy:/tmp/.ivy
@@ -62,6 +65,8 @@ services:
     image: apache/spark:3.5.1
     container_name: spark-worker
     hostname: spark-worker
+    environment:
+      PYTHONPATH: /opt/project
     command: >
       bash -c "/opt/spark/sbin/start-worker.sh spark://spark-master:7077 --cores 2 --memory 2g &&
       tail -f /opt/spark/logs/spark--org.apache.spark.deploy.worker*.out"
@@ -72,6 +77,7 @@ services:
     depends_on:
       - spark-master
     volumes:
+      - .:/opt/project
       - ./warehouse:/opt/spark/warehouse
       - ./apps:/opt/spark-apps
       - ./spark-ivy:/tmp/.ivy

@@ -169,8 +169,6 @@ def generate_dirty_event():
         "corrupt_json"
     ])
 
-    logger.warning(f"Generating dirty event of type: {dirty_type}")
-
     base = generate_clean_event()
 
     if dirty_type == "null_speed":
