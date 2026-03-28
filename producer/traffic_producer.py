@@ -1,26 +1,24 @@
-import sys
 import json
+import os
 import random
+import sys
 import time
+from collections import deque
 from datetime import datetime, timedelta
 
 import pytz
 from faker import Faker
 from kafka import KafkaProducer
 
-from utils.logger import logger
-from utils.exception import TrafficPipelineException
+from src.utils.exception import TrafficPipelineException
+from src.utils.logger import logger
+
+from dotenv import load_dotenv
+load_dotenv()
 
 
 fake = Faker()
 utc = pytz.utc
-
-producer = KafkaProducer(
-    bootstrap_servers="localhost:29092",
-    value_serializer=lambda v: json.dumps(v).encode("utf-8")
-)
-
-logger.info("Kafka producer initialized successfully")
 
 
 # Map roads to zones so road_id and city_zone stay logically consistent
@@ -33,7 +31,11 @@ roads = {
 }
 
 weather_options = ["CLEAR", "RAIN", "FOG", "STORM"]
-vehicle_cache = []
+vehicle_cache = deque(maxlen=5000)
+KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:29092")
+KAFKA_TOPIC = os.getenv("KAFKA_TOPIC", "traffic-topic")
+MIN_SLEEP_SECONDS = float(os.getenv("MIN_SLEEP_SECONDS", "0.5"))
+MAX_SLEEP_SECONDS = float(os.getenv("MAX_SLEEP_SECONDS", "1.5"))
 
 
 # Rush-hour logic to create time-based traffic patterns
@@ -202,35 +204,74 @@ def generate_dirty_event():
         )
 
     elif dirty_type == "corrupt_json":
-        return "###CORRUPTED_EVENT###"
+        return b'{"vehicle_id": "broken-payload", "speed": '
 
     return base
 
 
-event_count = 0
+def serialize_event(value):
+    if isinstance(value, bytes):
+        return value
+    if isinstance(value, str):
+        return value.encode("utf-8")
+    return json.dumps(value).encode("utf-8")
 
-try:
-    while True:
-        if random.random() < 0.75:
-            event = generate_clean_event()
-        else:
-            event = generate_dirty_event()
 
-        if isinstance(event, str):
-            producer.send("traffic-topic", value={"raw": event})
-            logger.warning("Corrupt payload sent to Kafka topic")
-            print("CORRUPT EVENT SENT")
-        else:
-            producer.send("traffic-topic", value=event)
-            event_count += 1
+def build_producer():
+    producer = KafkaProducer(
+        bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
+        value_serializer=serialize_event,
+        acks="all",
+        retries=3
+    )
+    logger.info("Kafka producer initialized successfully")
+    return producer
 
-            if event_count % 50 == 0:
-                logger.info(f"{event_count} events sent successfully")
 
-            print(event)
+def send_event(producer, event):
+    if isinstance(event, bytes):
+        producer.send(KAFKA_TOPIC, value=event)
+        logger.warning("Malformed payload sent to Kafka topic")
+        print("MALFORMED EVENT SENT")
+        return
 
-        time.sleep(random.uniform(0.5, 1.5))
+    producer.send(KAFKA_TOPIC, value=event)
+    print(event)
 
-except Exception as e:
-    logger.error(str(TrafficPipelineException(e, sys)))
-    raise TrafficPipelineException(e, sys)
+
+def main():
+    event_count = 0
+    producer = None
+
+    try:
+        producer = build_producer()
+
+        while True:
+            if random.random() < 0.75:
+                event = generate_clean_event()
+            else:
+                event = generate_dirty_event()
+
+            send_event(producer, event)
+
+            if not isinstance(event, bytes):
+                event_count += 1
+
+                if event_count % 50 == 0:
+                    logger.info(f"{event_count} events sent successfully")
+
+            time.sleep(random.uniform(MIN_SLEEP_SECONDS, MAX_SLEEP_SECONDS))
+
+    except KeyboardInterrupt:
+        logger.info("Traffic producer stopped by user")
+    except Exception as e:
+        logger.error(str(TrafficPipelineException(e, sys)))
+        raise TrafficPipelineException(e, sys) from e
+    finally:
+        if producer is not None:
+            producer.flush()
+            producer.close()
+
+
+if __name__ == "__main__":
+    main()
