@@ -28,3 +28,7 @@ Apache Spark / PySpark
 Delta Lake  
 Hive Metastore  
 Power B
+
+## About data
+
+This project uses a synthetic, real-time traffic event stream designed to closely mimic real-world urban traffic behavior. Each event represents a vehicle observation and includes attributes such as road ID, city zone, speed, congestion level, weather conditions, traffic volume, incident flags, and event timestamp. Unlike purely random data, the generator introduces realistic relationships between features—for example, higher congestion typically leads to lower speeds, adverse weather conditions reduce traffic flow efficiency, and rush-hour patterns vary by location such as CBDs, airports, and suburban areas. Additionally, the data stream intentionally includes anomalous and dirty records (e.g., null values, extreme speeds, schema drift, late or future timestamps, and corrupted payloads) to simulate real-world data quality challenges. This allows the pipeline to be tested not only for processing and analytics but also for robustness, validation, and cleaning in downstream stages.
