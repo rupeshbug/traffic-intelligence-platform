@@ -6,7 +6,7 @@ This project is an end-to-end real-time traffic data engineering system built us
 
 In simple terms, the pipeline flow is:
 
-`Traffic Producer -> Kafka -> Bronze -> Silver -> Gold (planned) -> Power BI`
+`Traffic Producer -> Kafka -> Bronze -> Silver -> Gold -> Power BI`
 
 Later phases are planned to extend this into ML, MLflow, data drift detection, and monitoring.
 
@@ -83,7 +83,6 @@ This matters because the generated data becomes:
 
 - more realistic
 - more valuable for analysis
-- more credible in interviews
 - more useful for future machine learning experiments
 
 If data is purely random, downstream analytics and ML become much less meaningful. By preserving realistic relationships, the project becomes stronger technically.
@@ -119,12 +118,13 @@ It provides:
 - decoupling between producer and consumer
 - buffering between data generation and data processing
 
-This separation is important because the producer should focus on creating events, while Spark should focus on consuming and transforming them.
+This separation is important because the producer should focus on creating events, while Spark should focus on consuming and transforming them. If direct Spark is only used then when the pipeline breaks the data is also lost. But kafka is a temporary durable event store. It stores data for some time. We have to pull the data and store it in bronze layer.
 
 So the division of responsibility is:
 
 - Kafka handles ingestion and stream persistence
 - Spark handles streaming transformation and storage logic
+- traffic_producer.py is Producer while Spark is consumer.
 
 ## Why Spark Structured Streaming Is Used
 
