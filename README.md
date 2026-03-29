@@ -24,7 +24,7 @@ This project simulates a real-world streaming data pipeline where traffic data i
 
 Docker 
 Apache Kafka  
-Apache Spark / PySpark  
+Apache SparK  
 Delta Lake  
 Hive Metastore  
 Power B
