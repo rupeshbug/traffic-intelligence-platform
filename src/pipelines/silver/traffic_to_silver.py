@@ -9,7 +9,6 @@ from pyspark.sql.functions import (
     hour,
     lit,
     regexp_replace,
-    rtrim,
     to_timestamp,
     when
 )
@@ -128,7 +127,7 @@ def add_data_quality_flags(bronze_df):
         )
         .withColumn(
             "invalid_reason",
-            rtrim(
+            regexp_replace(
                 regexp_replace(
                     concat(
                         when(col("parse_ok") == 0, lit("PARSE_FAILURE|")).otherwise(lit("")),
@@ -144,7 +143,8 @@ def add_data_quality_flags(bronze_df):
                     "\\|+",
                     "|"
                 ),
-                "|"
+                "\\|$",
+                ""
             )
         )
         .withColumn(
