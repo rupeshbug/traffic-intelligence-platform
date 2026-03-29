@@ -137,6 +137,8 @@ In simple terms:
 - files hold the data
 - the metastore holds the metadata that makes those files behave like tables
 
+Note:- Gold data is physically stored as Delta Lake tables under the warehouse/ directory. These tables consist of Parquet data files plus a _delta_log transaction log. Spark understands this layout natively, but BI tools such as Power BI usually work better with registered tables exposed through a SQL/catalog layer rather than raw storage paths alone. A Hive Metastore provides that catalog layer by registering file-backed datasets as queryable tables.
+
 ## Current Outputs
 
 The pipeline outputs are written to the local warehouse/ directory. That folder is gitignored, so generated data files are not committed to the repository, but the code creates and writes the expected output paths during execution.
