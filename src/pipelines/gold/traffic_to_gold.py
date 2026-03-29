@@ -10,6 +10,7 @@ from pyspark.sql.functions import (
     min as spark_min,
     sum as spark_sum,
     to_date,
+    window,
     when
 )
 
@@ -153,8 +154,8 @@ def build_zone_hourly_metrics(silver_df):
         silver_df
         .withWatermark("event_ts", "15 minutes")
         .groupBy(
+            window("event_ts", "1 hour"),
             "city_zone",
-            "hour",
             "weather",
             "peak_flag"
         )
@@ -166,6 +167,20 @@ def build_zone_hourly_metrics(silver_df):
             spark_sum("incident_flag_int").alias("incident_count"),
             spark_min("speed_int").alias("min_speed"),
             spark_max("speed_int").alias("max_speed")
+        )
+        .select(
+            col("window.start").alias("window_start"),
+            col("window.end").alias("window_end"),
+            "city_zone",
+            "weather",
+            "peak_flag",
+            "event_count",
+            "avg_speed",
+            "avg_traffic_volume",
+            "avg_congestion_level",
+            "incident_count",
+            "min_speed",
+            "max_speed"
         )
     )
 
@@ -179,8 +194,8 @@ def build_road_hourly_metrics(silver_df):
         silver_df
         .withWatermark("event_ts", "15 minutes")
         .groupBy(
+            window("event_ts", "1 hour"),
             "road_id",
-            "hour",
             "weather"
         )
         .agg(
@@ -189,6 +204,17 @@ def build_road_hourly_metrics(silver_df):
             avg("traffic_volume_int").alias("avg_traffic_volume"),
             avg("congestion_level_int").alias("avg_congestion_level"),
             spark_sum("incident_flag_int").alias("incident_count")
+        )
+        .select(
+            col("window.start").alias("window_start"),
+            col("window.end").alias("window_end"),
+            "road_id",
+            "weather",
+            "event_count",
+            "avg_speed",
+            "avg_traffic_volume",
+            "avg_congestion_level",
+            "incident_count"
         )
     )
 
