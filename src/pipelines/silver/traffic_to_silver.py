@@ -3,15 +3,21 @@ import sys
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import (
     col,
-    when,
-    to_timestamp,
+    concat,
     current_timestamp,
     expr,
-    hour
+    hour,
+    lit,
+    regexp_replace,
+    rtrim,
+    to_timestamp,
+    when
 )
 
 from src.utils.logger import logger
 from src.utils.exception import TrafficPipelineException
+
+ALLOWED_WEATHER = ["CLEAR", "RAIN", "FOG", "STORM"]
 
 
 def create_spark_session():
@@ -52,40 +58,39 @@ def read_bronze_stream(spark):
 
 
 def add_data_quality_flags(bronze_df):
-    logger.info("Applying data quality flags")
+    logger.info("Applying Silver validation flags")
 
     dq_df = (
-        bronze_df.withColumn(
-            "dq_flag",
-            when(col("vehicle_id").isNull(), "MISSING_VEHICLE")
-            .when(col("event_time").isNull(), "MISSING_TIME")
-            .when(col("raw_json").isNull(), "MISSING_RAW_JSON")
-            .when(col("raw_json").contains("broken-payload"), "CORRUPT_JSON")
-            .otherwise("OK")
-        )
-    )
-
-    return dq_df
-
-
-def safe_type_cast(dq_df):
-    logger.info("Applying safe type casting")
-
-    typed_df = (
-        dq_df.withColumn("speed_int", col("speed").cast("int"))
+        bronze_df
+        .withColumn("speed_int", col("speed").cast("int"))
         .withColumn("traffic_volume_int", col("traffic_volume").cast("int"))
         .withColumn("incident_flag_int", col("incident_flag").cast("int"))
+        .withColumn("congestion_level_int", col("congestion_level").cast("int"))
         .withColumn("event_ts", to_timestamp("event_time"))
-    )
-
-    return typed_df
-
-
-def apply_business_validations(typed_df):
-    logger.info("Applying business validation rules")
-
-    validated_df = (
-        typed_df.withColumn(
+        .withColumn(
+            "parse_ok",
+            when(
+                col("raw_json").isNotNull() &
+                (
+                    col("vehicle_id").isNotNull() |
+                    col("road_id").isNotNull() |
+                    col("city_zone").isNotNull() |
+                    col("event_time").isNotNull()
+                ),
+                1
+            ).otherwise(0)
+        )
+        .withColumn(
+            "required_fields_ok",
+            when(
+                col("vehicle_id").isNotNull() &
+                col("road_id").isNotNull() &
+                col("city_zone").isNotNull() &
+                col("event_time").isNotNull(),
+                1
+            ).otherwise(0)
+        )
+        .withColumn(
             "speed_valid",
             when((col("speed_int") >= 0) & (col("speed_int") <= 160), 1).otherwise(0)
         )
@@ -98,15 +103,57 @@ def apply_business_validations(typed_df):
             when(col("incident_flag_int").isin(0, 1), 1).otherwise(0)
         )
         .withColumn(
-            "time_valid",
+            "congestion_level_valid",
+            when(col("congestion_level_int").between(1, 5), 1).otherwise(0)
+        )
+        .withColumn(
+            "weather_valid",
+            when(col("weather").isin(*ALLOWED_WEATHER), 1).otherwise(0)
+        )
+        .withColumn(
+            "location_valid",
             when(
-                col("event_ts") <= current_timestamp() + expr("INTERVAL 10 MINUTES"),
+                col("road_id").isNotNull() &
+                col("city_zone").isNotNull(),
                 1
             ).otherwise(0)
         )
+        .withColumn(
+            "time_valid",
+            when(
+                col("event_ts").isNotNull() &
+                (col("event_ts") <= current_timestamp() + expr("INTERVAL 10 MINUTES")),
+                1
+            ).otherwise(0)
+        )
+        .withColumn(
+            "invalid_reason",
+            rtrim(
+                regexp_replace(
+                    concat(
+                        when(col("parse_ok") == 0, lit("PARSE_FAILURE|")).otherwise(lit("")),
+                        when(col("required_fields_ok") == 0, lit("MISSING_REQUIRED_FIELDS|")).otherwise(lit("")),
+                        when(col("speed_valid") == 0, lit("INVALID_SPEED|")).otherwise(lit("")),
+                        when(col("traffic_volume_valid") == 0, lit("INVALID_TRAFFIC_VOLUME|")).otherwise(lit("")),
+                        when(col("incident_flag_valid") == 0, lit("INVALID_INCIDENT_FLAG|")).otherwise(lit("")),
+                        when(col("congestion_level_valid") == 0, lit("INVALID_CONGESTION_LEVEL|")).otherwise(lit("")),
+                        when(col("weather_valid") == 0, lit("INVALID_WEATHER|")).otherwise(lit("")),
+                        when(col("location_valid") == 0, lit("INVALID_LOCATION|")).otherwise(lit("")),
+                        when(col("time_valid") == 0, lit("INVALID_EVENT_TIME|")).otherwise(lit(""))
+                    ),
+                    "\\|+",
+                    "|"
+                ),
+                "|"
+            )
+        )
+        .withColumn(
+            "dq_flag",
+            when(col("invalid_reason") == "", "OK").otherwise("REJECTED")
+        )
     )
 
-    return validated_df
+    return dq_df
 
 
 def filter_good_records(validated_df):
@@ -117,10 +164,21 @@ def filter_good_records(validated_df):
         (col("speed_valid") == 1) &
         (col("traffic_volume_valid") == 1) &
         (col("incident_flag_valid") == 1) &
+        (col("congestion_level_valid") == 1) &
+        (col("weather_valid") == 1) &
+        (col("location_valid") == 1) &
         (col("time_valid") == 1)
     )
 
     return clean_stream
+
+
+def capture_rejected_records(validated_df):
+    logger.info("Capturing rejected Silver records")
+
+    rejected_df = validated_df.filter(col("dq_flag") == "REJECTED")
+
+    return rejected_df
 
 
 def handle_late_data_and_deduplicate(clean_stream):
@@ -180,31 +238,50 @@ def write_silver_stream(silver_final):
     return silver_query
 
 
+def write_rejected_stream(rejected_df):
+    logger.info("Starting Silver rejected Delta write stream")
+
+    rejected_query = (
+        rejected_df.writeStream
+        .format("delta")
+        .outputMode("append")
+        .option("checkpointLocation", "/opt/spark/warehouse/chk/traffic_silver_rejected")
+        .option("path", "/opt/spark/warehouse/traffic_silver_rejected")
+        .start()
+    )
+
+    logger.info("Silver rejected Delta write stream started successfully")
+    return rejected_query
+
+
 def main():
     spark = None
-    query = None
+    silver_query = None
+    rejected_query = None
 
     try:
         spark = create_spark_session()
         bronze_df = read_bronze_stream(spark)
-        dq_df = add_data_quality_flags(bronze_df)
-        typed_df = safe_type_cast(dq_df)
-        validated_df = apply_business_validations(typed_df)
+        validated_df = add_data_quality_flags(bronze_df)
         clean_stream = filter_good_records(validated_df)
+        rejected_df = capture_rejected_records(validated_df)
         deduped_df = handle_late_data_and_deduplicate(clean_stream)
         silver_final = feature_engineering(deduped_df)
-        query = write_silver_stream(silver_final)
+        silver_query = write_silver_stream(silver_final)
+        rejected_query = write_rejected_stream(rejected_df)
 
         logger.info("Bronze to Silver pipeline is now running")
-        query.awaitTermination()
+        spark.streams.awaitAnyTermination()
 
     except Exception as e:
         logger.error(str(TrafficPipelineException(e, sys)))
         raise TrafficPipelineException(e, sys) from e
 
     finally:
-        if query is not None and query.isActive:
-            query.stop()
+        if silver_query is not None and silver_query.isActive:
+            silver_query.stop()
+        if rejected_query is not None and rejected_query.isActive:
+            rejected_query.stop()
         logger.info("Bronze to Silver pipeline stopped")
 
 
