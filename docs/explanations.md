@@ -234,7 +234,7 @@ Instead of silently dropping invalid rows, I preserved them in a separate reject
 
 ## Rejected Records: Important Design Decision
 
-One of the most important design decisions in this project is that invalid Silver records are not silently dropped.
+One of the most important design decisions in this project is that invalid Silver records are not silently dropped. OBSERVABILITY
 
 Instead, I preserved them in a separate rejected Delta stream and attached validation reasons.
 
