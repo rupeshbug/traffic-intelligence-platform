@@ -1,249 +1,212 @@
-# 🚦 Real-Time Traffic Data Engineering Pipeline
+# Real-Time Traffic Data Engineering Pipeline
 
-## 📌 Overview
+## Overview
 
-This project is an **end-to-end real-time data engineering pipeline** built using modern streaming technologies. It simulates realistic traffic data, processes it through a **multi-layered architecture**, and transforms it into **analytics-ready datasets**.
+This project is an end-to-end real-time traffic data engineering pipeline built to learn and demonstrate Kafka, Spark Structured Streaming, Delta Lake, and medallion architecture in a practical way.
 
-The goal is not just to build a pipeline, but to demonstrate:
+The system simulates realistic traffic events, ingests them through Kafka, lands them in a Bronze layer, cleans and validates them in Silver, and models them into analytics-ready Gold datasets for dashboarding and future ML use cases.
 
-- Strong data engineering fundamentals  
-- Handling of messy, real-world data  
-- System design thinking  
-- Extensibility into analytics, ML, and monitoring  
+Pipeline flow:
 
----
+`Traffic Producer -> Kafka -> Bronze -> Silver -> Gold -> Power BI`
 
-## 🏗️ Architecture
+## Tech Stack
 
-Traffic Producer → Kafka → Spark → Bronze → Silver → Gold
+- Python
+- Apache Kafka
+- Apache Spark Structured Streaming
+- Delta Lake
+- Docker
+- Hive Metastore 
 
+## Project Goals
 
-### Tech Stack
+- learn real-time data engineering fundamentals
+- work with Kafka and Spark together in an end-to-end system
+- handle messy streaming data instead of only perfect records
+- implement medallion architecture clearly
+- create analytics-ready outputs for dashboards
+- prepare a foundation for future ML, drift detection, and monitoring
 
-- **Apache Kafka** → ingestion & buffering  
-- **Apache Spark Structured Streaming** → stream processing  
-- **Delta Lake** → storage layer  
-- **Docker** → containerized environment  
+## Data Description
 
----
+The project uses synthetic traffic events, but the data is not purely random.
 
-## 🚦 Data Description
+Each event includes fields such as:
 
-This project uses a **synthetic, real-time traffic event stream** designed to closely mimic real-world urban traffic behavior.
+- `vehicle_id`
+- `road_id`
+- `city_zone`
+- `speed`
+- `congestion_level`
+- `traffic_volume`
+- `incident_flag`
+- `weather`
+- `event_time`
 
-Each event represents a vehicle observation and includes attributes such as:
+The generator models realistic relationships between variables:
 
-- vehicle ID  
-- road ID  
-- city zone  
-- speed  
-- congestion level  
-- weather conditions  
-- traffic volume  
-- incident flags  
-- event timestamp  
+- higher congestion usually leads to lower speed
+- bad weather increases congestion pressure and reduces speed
+- rush hour affects congestion and traffic volume
+- different zones behave differently, such as CBD, airport, suburb, and train station
 
-Unlike purely random data, the generator introduces **realistic relationships between features**:
+The producer also injects dirty records intentionally:
 
-- Higher congestion → lower speeds  
-- Adverse weather → reduced traffic flow efficiency  
-- Rush-hour patterns vary by location (CBD, airport, suburban areas)  
+- null values
+- wrong data types
+- extreme speeds
+- duplicates
+- late and future timestamps
+- schema drift
+- malformed payloads
 
-Additionally, the data stream intentionally includes **anomalous and dirty records**:
+This makes the pipeline more realistic and gives the Silver layer meaningful cleaning and validation work.
 
-- null values  
-- incorrect data types  
-- extreme values (e.g., unrealistic speeds)  
-- schema drift  
-- late and future timestamps  
-- corrupted payloads  
+## Architecture
 
-This allows the pipeline to be tested not only for processing and analytics, but also for:
+### Bronze
 
-- robustness  
-- validation  
-- data quality handling  
+Purpose: preserve raw truth
 
----
+- reads traffic events from Kafka
+- stores raw JSON for traceability
+- applies only minimal parsing
+- writes raw-ish data to Delta Lake
 
-## 🥉 Bronze Layer — Raw Data
-
-**Purpose:** Preserve raw truth
-
-- Ingests data directly from Kafka  
-- Minimal transformation  
-- Flexible schema (permissive parsing)  
-- Stores raw JSON for traceability  
-
-> Bronze is a **source of truth**, not a place for cleaning.
-
----
-
-## 🥈 Silver Layer — Clean & Validated Data
-
-**Purpose:** Make data reliable and usable
-
-### Key Operations
-
-- Type casting (string → numeric, timestamp parsing)  
-- Data quality validation (multiple checks per row)  
-- Deduplication using event-time  
-- Watermarking to handle late data  
-- Feature engineering  
-
-### Data Quality Design
-
-Each record is evaluated using explicit checks:
-
-- `parse_ok`  
-- `required_fields_ok`  
-- `speed_valid`  
-- `traffic_volume_valid`  
-- `incident_flag_valid`  
-- `congestion_level_valid`  
-- `weather_valid`  
-- `time_valid`  
-
-### 🚨 Key Design Decision
-
-> Instead of silently dropping invalid rows, I preserved them in a separate rejected Delta stream with validation reasons, so the pipeline remains auditable and I can inspect upstream data quality issues without polluting downstream analytics.
-
-### Output
-
-- `traffic_silver` → clean, validated data  
-- `traffic_silver_rejected` → rejected records with reasons  
-
----
-
-## 🥇 Gold Layer — Analytics-Ready Data
-
-**Purpose:** Serve business use cases
-
-Gold transforms Silver data into **structured, meaningful datasets** optimized for analytics and dashboards.
-
----
-
-### ⭐ Star Schema (Data Modeling)
-
-The Gold layer uses a **star schema design**:
-
-#### Fact Table
-
-- `fact_traffic`  
-- Contains event-level traffic observations:
-  - speed  
-  - congestion  
-  - traffic volume  
-  - time attributes  
-  - contextual features  
-
-#### Dimension Tables
-
-- `dim_zone` → zone type, traffic risk  
-- `dim_road` → road type, speed limits  
-- `dim_weather` → weather severity  
-
-These tables add **business meaning** and avoid repeated logic in analytical queries.
-
----
-
-### 📊 Aggregate Tables (For Dashboards)
-
-Gold also includes **precomputed hourly aggregate tables**:
-
-- `gold_zone_hourly_metrics`  
-- `gold_road_hourly_metrics`  
-
-These tables compute metrics such as:
-
-- average speed  
-- traffic volume  
-- congestion level  
-- incident count  
-
-Grouped by:
-
-- time window (1 hour)  
-- zone / road  
-- weather  
-- peak vs non-peak  
-
----
-
-### ⏱️ Event-Time Processing
-
-Aggregations use:
-
-- **event-time windows** → `window(event_ts, "1 hour")`  
-- **watermarking** to handle late-arriving data  
-
-This ensures:
-
-- correct time-based grouping  
-- bounded state in streaming  
-
----
-
-### Why Aggregates Matter
-
-Instead of querying raw event data repeatedly:
-
-- dashboards read precomputed metrics  
-- queries become faster and simpler  
-- system scales better  
-
-> Fact tables store events, aggregate tables store insights.
-
----
-
-## 🧠 Design Principles
-
-- **Separation of concerns**
-  - Kafka → ingestion  
-  - Spark → processing  
-  - Delta → storage  
-
-- **Data quality first**
-  - explicit validation  
-  - explainable failures  
-  - rejected data preserved  
-
-- **Event-time correctness**
-  - not relying on processing time  
-
-- **Production-inspired design**
-  - modular pipeline structure  
-  - logging and exception handling  
-  - containerized execution  
-
----
-
-## 📂 Output Tables
+Bronze is the source-of-truth landing layer, not the place for aggressive cleaning.
 
 ### Silver
 
-- `traffic_silver`  
-- `traffic_silver_rejected`  
+Purpose: produce clean and trustworthy data
+
+- safely casts data types
+- validates records with explicit quality flags
+- preserves rejected rows separately instead of silently dropping them
+- applies watermarking and deduplication
+- adds simple feature engineering such as `hour`, `peak_flag`, `speed_band`, and `traffic_band`
+
+Silver outputs:
+
+- `traffic_silver`
+- `traffic_silver_rejected`
+
+Key design decision:
+
+> Instead of silently dropping invalid rows, I preserved them in a separate rejected Delta stream with validation reasons, so the pipeline remains auditable and upstream data issues stay visible without polluting downstream analytics.
 
 ### Gold
 
-- `fact_traffic`  
-- `dim_zone`  
-- `dim_road`  
-- `dim_weather`  
-- `gold_zone_hourly_metrics`  
-- `gold_road_hourly_metrics`  
+Purpose: produce analytics-ready datasets
 
----
+Gold reshapes Silver data into business-friendly outputs for BI and downstream analysis.
 
-## 🚀 Future Work
+Gold outputs include:
 
-This project will be extended with:
+- `fact_traffic`
+- `dim_zone`
+- `dim_road`
+- `dim_weather`
+- `gold_zone_hourly_metrics`
+- `gold_road_hourly_metrics`
 
-- 📊 Power BI dashboards  
-- 🤖 Machine learning (traffic prediction)  
-- 📉 data drift detection  
-- 📡 monitoring and alerting  
-- ⚙️ performance optimizations  
+The current Gold layer is best described as star-schema-inspired:
 
----
+- a fact-like event table
+- lookup-style dimension tables
+- hourly aggregate tables for dashboards
+
+## Why Delta Lake
+
+Delta Lake is used to make streaming storage more reliable and table-like.
+
+Benefits:
+
+- ACID transactions
+- reliable streaming writes
+- schema management
+- transaction logs via `_delta_log`
+- a cleaner path toward managed/queryable tables later
+
+## Hive Metastore Concept
+
+The data is physically stored as files in the warehouse paths, but the metastore concept is what turns file paths into queryable tables by tracking metadata such as schema and table location.
+
+In simple terms:
+
+- files hold the data
+- the metastore holds the metadata that makes those files behave like tables
+
+## Current Outputs
+
+The pipeline outputs are written to the local warehouse/ directory. That folder is gitignored, so generated data files are not committed to the repository, but the code creates and writes the expected output paths during execution.
+
+### Silver Tables
+
+- `traffic_silver`
+- `traffic_silver_rejected`
+
+### Gold Tables
+
+- `fact_traffic`
+- `dim_zone`
+- `dim_road`
+- `dim_weather`
+- `gold_zone_hourly_metrics`
+- `gold_road_hourly_metrics`
+
+## Running the Pipeline
+
+### 1. Start the producer
+
+```powershell
+python -m producer.traffic_producer
+```
+
+### 2. Run Bronze
+
+```powershell
+docker exec -it spark-worker /opt/spark/bin/spark-submit --conf spark.jars.ivy=/tmp/.ivy --packages io.delta:delta-spark_2.12:3.2.0,org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1 /opt/project/src/pipelines/bronze/kafka_to_bronze.py
+```
+
+### 3. Run Silver
+
+```powershell
+docker exec -it spark-worker /opt/spark/bin/spark-submit --conf spark.jars.ivy=/tmp/.ivy --packages io.delta:delta-spark_2.12:3.2.0 /opt/project/src/pipelines/silver/traffic_to_silver.py
+```
+
+### 4. Run Gold
+
+```powershell
+docker exec -it spark-worker /opt/spark/bin/spark-submit --conf spark.jars.ivy=/tmp/.ivy --packages io.delta:delta-spark_2.12:3.2.0 /opt/project/src/pipelines/gold/traffic_to_gold.py
+```
+
+## Inspection Helpers
+
+Inspect Silver:
+
+```powershell
+docker exec -it spark-worker /opt/spark/bin/spark-submit --conf spark.jars.ivy=/tmp/.ivy --packages io.delta:delta-spark_2.12:3.2.0 /opt/project/src/pipelines/silver/inspect_silver.py
+```
+
+Inspect Gold:
+
+```powershell
+docker exec -it spark-worker /opt/spark/bin/spark-submit --conf spark.jars.ivy=/tmp/.ivy --packages io.delta:delta-spark_2.12:3.2.0 /opt/project/src/pipelines/gold/inspect_gold.py
+```
+
+## Limitations
+
+Current limitations include:
+
+- the producer emits one event at a time rather than simulating many concurrent vehicles
+- local Spark resources are limited, so layers are often run sequentially during development
+- Gold uses a star-schema-inspired model rather than a strict warehouse star schema with surrogate keys
+
+## Future Work
+
+- machine learning with MLflow
+- drift detection
+- monitoring and alerting
+- table registration in metastore
+- performance tuning and production hardening

@@ -45,8 +45,6 @@ def get_kafka_raw_stream(spark):
         .option("startingOffsets", "latest")
         .load()
     )
-    
-    print("raw stream ------->", raw_stream)
 
     logger.info("Kafka raw stream initialized successfully")
     return raw_stream
@@ -60,8 +58,6 @@ def parse_stream(raw_stream):
         "CAST(value AS STRING) as raw_json",
         "timestamp as kafka_timestamp"
     )
-    
-    print("json stream ------->", json_stream)
 
     # Flexible Bronze schema (most of then casted to string type for now as they contain faulty data)
     traffic_schema = StructType([
@@ -81,15 +77,11 @@ def parse_stream(raw_stream):
         from_json(col("raw_json"), traffic_schema)
     )
 
-    print("parsed -------> ", parsed)
-
     flattened = parsed.select(
         "raw_json",
         "kafka_timestamp",
         "data.*"
     )
-    
-    print("flattened -------> ", flattened)
 
     logger.info("Kafka stream parsed successfully into Bronze dataframe")
     return flattened
