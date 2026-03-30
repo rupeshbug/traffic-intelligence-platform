@@ -148,6 +148,19 @@ The pipeline outputs are written to the local warehouse/ directory. That folder 
 - `gold_zone_hourly_metrics`
 - `gold_road_hourly_metrics`
 
+## Dashboard
+
+The Gold layer is consumed in Power BI to highlight traffic efficiency, congestion hotspots, weather impact, and zone-level operational risk.
+
+![Power BI Dashboard](image/dashboard.png)
+
+The dashboard focuses on a few high-value business questions:
+
+- which zones are most congested
+- how speed drops as congestion increases
+- how weather conditions affect traffic flow
+- which areas consistently experience slower traffic
+
 ## Running the Pipeline
 
 ### 1. Start the producer
@@ -187,19 +200,6 @@ Inspect Gold:
 ```powershell
 docker exec -it spark-worker /opt/spark/bin/spark-submit --conf spark.jars.ivy=/tmp/.ivy --packages io.delta:delta-spark_2.12:3.2.0 /opt/project/src/pipelines/gold/inspect_gold.py
 ```
-
-## Dashboard
-
-The Gold layer is consumed in Power BI to highlight traffic efficiency, congestion hotspots, weather impact, and zone-level operational risk.
-
-![Power BI Dashboard](image/dashboard.png)
-
-The dashboard focuses on a few high-value business questions:
-
-- which zones are most congested
-- how speed drops as congestion increases
-- how weather conditions affect traffic flow
-- which areas consistently experience slower traffic
 
 ## Limitations
 
