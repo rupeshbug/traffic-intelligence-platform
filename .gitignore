@@ -211,3 +211,8 @@ docs/
 
 # ignore warehouse
 warehouse/
+
+# ignore ML artifacts
+artifacts/*
+!artifacts/.gitkeep
+mlruns/
