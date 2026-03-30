@@ -19,15 +19,6 @@ Pipeline flow:
 - Docker
 - Hive Metastore 
 
-## Project Goals
-
-- learn real-time data engineering fundamentals
-- work with Kafka and Spark together in an end-to-end system
-- handle messy streaming data instead of only perfect records
-- implement medallion architecture clearly
-- create analytics-ready outputs for dashboards
-- prepare a foundation for future ML, drift detection, and monitoring
-
 ## Data Description
 
 The project uses synthetic traffic events, but the data is not purely random.
