@@ -8,7 +8,7 @@ The system simulates realistic traffic events, ingests them through Kafka, lands
 
 Pipeline flow:
 
-`Traffic Producer -> Kafka -> Bronze -> Silver -> Gold -> Power BI`
+`Traffic Producer -> Kafka -> Bronze -> Silver -> Gold -> Power BI & ML`
 
 ## Tech Stack
 
@@ -18,6 +18,7 @@ Pipeline flow:
 - Delta Lake
 - Docker
 - Hive Metastore 
+- MLFlow
 
 ## Data Description
 
@@ -148,6 +149,12 @@ The pipeline outputs are written to the local warehouse/ directory. That folder 
 - `gold_zone_hourly_metrics`
 - `gold_road_hourly_metrics`
 
+### ML Outputs
+
+- saved model artifact under `artifacts/ml/speed_estimation/`
+- model leaderboard
+- MLflow experiment runs under `mlruns/`
+
 ## Dashboard
 
 The Gold layer is consumed in Power BI to highlight traffic efficiency, congestion hotspots, weather impact, and zone-level operational risk. A sample dashboard is created to demonstrate business insights.
@@ -160,6 +167,37 @@ The dashboard focuses on a few high-value business questions:
 - how speed drops as congestion increases
 - how weather conditions affect traffic flow
 - which areas consistently experience slower traffic
+
+## Machine Learning Extension
+
+To extend the project beyond analytics, I added a speed estimation use case framed as current-condition traffic speed prediction.
+
+I used the Gold fact table as the training dataset because it already contains cleaned, typed, and business-relevant features. This keeps the model training stage aligned with the rest of the pipeline and avoids training directly on raw streaming data.
+
+From `fact_traffic`, I selected a subset of features that have meaningful relationships with speed, such as time, traffic conditions, and environmental context:
+
+- `hour`
+- `peak_flag`
+- `traffic_volume_int`
+- `congestion_level_int`
+- `incident_flag_int`
+- `road_id`
+- `city_zone`
+- `weather`
+- `traffic_band`
+
+I intentionally avoided irrelevant columns and only used features that are available at inference time. The feature selection here is practical and domain-driven rather than heavily optimized. More formal approaches such as feature importance, mutual information, or systematic feature selection would be better for a mature ML project, but the goal here was to build a clean end-to-end pipeline first.
+
+I experimented with multiple regression models:
+
+- Linear Regression
+- Decision Tree Regressor
+- Random Forest Regressor
+- Gradient Boosting Regressor
+
+The goal was to balance predictive quality with reasonably fast inference. Since the dataset is relatively small and synthetic, the purpose was not to maximize accuracy at all costs, but to demonstrate a robust ML workflow on top of the Gold layer.
+
+MLflow is used to track experiments, compare model performance, and log model artifacts. The best-performing model is saved locally for downstream inference.
 
 ## Running the Pipeline
 
@@ -187,6 +225,18 @@ docker exec -it spark-worker /opt/spark/bin/spark-submit --conf spark.jars.ivy=/
 docker exec -it spark-worker /opt/spark/bin/spark-submit --conf spark.jars.ivy=/tmp/.ivy --packages io.delta:delta-spark_2.12:3.2.0 /opt/project/src/pipelines/gold/traffic_to_gold.py
 ```
 
+### 5. Train the speed estimation model
+
+```powershell
+python -m src.pipelines.ml.train_speed_model
+```
+
+### 6. View MLflow runs
+
+```powershell
+mlflow ui --backend-store-uri .\mlruns
+```
+
 ## Inspection Helpers
 
 Inspect Silver:
@@ -201,6 +251,12 @@ Inspect Gold:
 docker exec -it spark-worker /opt/spark/bin/spark-submit --conf spark.jars.ivy=/tmp/.ivy --packages io.delta:delta-spark_2.12:3.2.0 /opt/project/src/pipelines/gold/inspect_gold.py
 ```
 
+Training outputs:
+
+- leaderboard: `artifacts/ml/speed_estimation/leaderboard.csv`
+- model: `artifacts/ml/speed_estimation/best_speed_model.joblib`
+- metadata: `artifacts/ml/speed_estimation/training_metadata.json`
+
 ## Limitations
 
 Current limitations include:
@@ -208,10 +264,11 @@ Current limitations include:
 - the producer emits one event at a time rather than simulating many concurrent vehicles
 - local Spark resources are limited, so layers are often run sequentially during development
 - Gold uses a star-schema-inspired model rather than a strict warehouse star schema with surrogate keys
+- the ML stage is currently offline training on curated Gold data, not a fully online model serving system
 
 ## Future Work
 
-- machine learning with MLflow
+- real-time speed scoring on newly processed events
 - drift detection
 - monitoring and alerting
 - table registration in metastore
