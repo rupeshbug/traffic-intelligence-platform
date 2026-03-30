@@ -137,7 +137,7 @@ In simple terms:
 - files hold the data
 - the metastore holds the metadata that makes those files behave like tables
 
-Note:- Gold data is physically stored as Delta Lake tables under the warehouse/ directory. These tables consist of Parquet data files plus a _delta_log transaction log. Spark understands this layout natively, but BI tools such as Power BI usually work better with registered tables exposed through a SQL/catalog layer rather than raw storage paths alone. A Hive Metastore provides that catalog layer by registering file-backed datasets as queryable tables.
+Note: Gold data is physically stored as Delta Lake tables under the `warehouse/` directory. These tables consist of Parquet data files plus a `_delta_log` transaction log. Spark understands this layout natively, but BI tools such as Power BI usually work better with registered tables exposed through a SQL/catalog layer rather than raw storage paths alone. A Hive Metastore provides that catalog layer by registering file-backed datasets as queryable tables.
 
 ## Current Outputs
 
@@ -196,6 +196,19 @@ Inspect Gold:
 ```powershell
 docker exec -it spark-worker /opt/spark/bin/spark-submit --conf spark.jars.ivy=/tmp/.ivy --packages io.delta:delta-spark_2.12:3.2.0 /opt/project/src/pipelines/gold/inspect_gold.py
 ```
+
+## Dashboard
+
+The Gold layer is consumed in Power BI to highlight traffic efficiency, congestion hotspots, weather impact, and zone-level operational risk.
+
+![Power BI Dashboard](image/dashboard.png)
+
+The dashboard focuses on a few high-value business questions:
+
+- which zones are most congested
+- how speed drops as congestion increases
+- how weather conditions affect traffic flow
+- which areas consistently experience slower traffic
 
 ## Limitations
 
