@@ -199,6 +199,8 @@ The goal was to balance predictive quality with reasonably fast inference. Since
 
 MLflow is used to track experiments, compare model performance, and log model artifacts. The best-performing model is saved locally for downstream inference.
 
+The project is real-time from ingestion through transformation and analytics. The ML part currently performs near-real-time scoring on newly processed Gold records rather than a separate low-latency serving API.
+
 ## Running the Pipeline
 
 ### 1. Start the producer
