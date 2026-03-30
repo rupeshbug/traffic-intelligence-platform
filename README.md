@@ -150,7 +150,7 @@ The pipeline outputs are written to the local warehouse/ directory. That folder 
 
 ## Dashboard
 
-The Gold layer is consumed in Power BI to highlight traffic efficiency, congestion hotspots, weather impact, and zone-level operational risk.
+The Gold layer is consumed in Power BI to highlight traffic efficiency, congestion hotspots, weather impact, and zone-level operational risk. A sample dashboard is created to demonstrate business insights.
 
 ![Power BI Dashboard](image/dashboard.png)
 
